@@ -51,7 +51,7 @@ mkdir -p models
 docker run -d --name translation-service \
   -p 3000:3000 \
   -v "$(pwd)/models:/app/models" \
-  ghcr.io/LinguaSpark/server:main
+  ghcr.io/linguaspark/server:main
 ```
 
 ### Option 2: Using pre-built image with English-Chinese model (China mirror)
@@ -59,7 +59,7 @@ docker run -d --name translation-service \
 ```bash
 docker run -d --name translation-service \
   -p 3000:3000 \
-  docker.cnb.cool/LinguaSpark/server:latest
+  docker.cnb.cool/linguaspark/server:latest
 ```
 
 > Note: The English-Chinese model image is about 70MiB, and each worker uses approximately 300MiB+ of memory with low translation latency.
@@ -71,7 +71,7 @@ Create a `compose.yaml` file:
 ```yaml
 services:
   translation-service:
-    image: ghcr.io/LinguaSpark/server:main
+    image: ghcr.io/linguaspark/server:main
     ports:
       - "3000:3000"
     volumes:
@@ -97,7 +97,7 @@ docker compose up -d
 If you need to create a custom image with specific language pairs, use this Dockerfile template:
 
 ```dockerfile
-FROM ghcr.io/LinguaSpark/server:main
+FROM ghcr.io/linguaspark/server:main
 
 COPY ./your-models-directory /app/models
 

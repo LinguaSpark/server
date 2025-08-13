@@ -44,7 +44,7 @@ Docker 是本服务**唯一推荐**的部署方式。
 ```bash
 docker run -d --name translation-service \
   -p 3000:3000 \
-  docker.cnb.cool/LinguaSpark/server:latest
+  docker.cnb.cool/linguaspark/server:latest
 ```
 
 > 注意：自带英译中模型的镜像大小约 70MiB，启动后单 worker 大约占用内存 300MiB+，且翻译延迟较低。
@@ -59,7 +59,7 @@ mkdir -p models
 docker run -d --name translation-service \
   -p 3000:3000 \
   -v "$(pwd)/models:/app/models" \
-  ghcr.io/LinguaSpark/server:main
+  ghcr.io/linguaspark/server:main
 ```
 
 ### Docker Compose 部署
@@ -69,7 +69,7 @@ docker run -d --name translation-service \
 ```yaml
 services:
   translation-service:
-    image: docker.cnb.cool/LinguaSpark/server:latest
+    image: docker.cnb.cool/linguaspark/server:latest
     ports:
       - "3000:3000"
     environment:
@@ -93,7 +93,7 @@ docker compose up -d
 如果需要创建包含特定语言对的自定义镜像，可以使用以下 Dockerfile 模板：
 
 ```dockerfile
-FROM ghcr.io/LinguaSpark/server:main
+FROM ghcr.io/linguaspark/server:main
 
 COPY ./your-models-directory /app/models
 
