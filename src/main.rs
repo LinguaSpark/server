@@ -182,22 +182,33 @@ async fn main() -> anyhow::Result<()> {
         .allow_methods(Any)
         .allow_headers(Any);
 
-    let app = Router::new()
+    // Routes that require authentication
+    let authenticated_routes = Router::new()
         .route("/translate", post(endpoint::translate))
+        .route("/translate/batch", post(endpoint::translate_batch))
+        .route("/languages", get(endpoint::languages))
+        .route("/language/translate/v2", post(endpoint::translate_google))
         .route("/kiss", post(endpoint::translate_kiss))
         .route("/imme", post(endpoint::translate_immersive))
         .route("/hcfy", post(endpoint::translate_hcfy))
         .route("/deeplx", post(endpoint::translate_deeplx))
         .route("/detect", post(endpoint::detect_language))
-        .route(
-            "/health",
-            get(async || {
-                Json(serde_json::json!({
-                    "status": "ok",
-                }))
-            }),
-        )
-        .route_layer(middleware::from_fn(auth_middleware))
+        .route_layer(middleware::from_fn(auth_middleware));
+
+    // Routes that don't require authentication
+    let public_routes = Router::new()
+        .route("/version", get(endpoint::version))
+        .route("/health", get(async || {
+            Json(serde_json::json!({
+                "status": "ok",
+            }))
+        }))
+        .route("/__heartbeat__", get(endpoint::heartbeat))
+        .route("/__lbheartbeat__", get(endpoint::lbheartbeat));
+
+    let app = Router::new()
+        .merge(authenticated_routes)
+        .merge(public_routes)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(app_state);

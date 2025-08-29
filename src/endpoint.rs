@@ -6,6 +6,53 @@ use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
 use std::{sync::Arc, time::SystemTime};
 
+const VERSION: &str = "v3.0.0";
+
+// Version endpoint
+#[derive(Debug, Serialize)]
+pub struct VersionResponse {
+    version: String,
+}
+
+pub async fn version() -> Json<VersionResponse> {
+    Json(VersionResponse {
+        version: VERSION.to_string(),
+    })
+}
+
+// Languages endpoint
+#[derive(Debug, Serialize)]
+pub struct LanguagesResponse {
+    languages: Vec<String>,
+}
+
+pub async fn languages(State(state): State<Arc<AppState>>) -> Json<LanguagesResponse> {
+    let mut language_codes = std::collections::HashSet::new();
+
+    for (from_lang, to_lang) in &state.models {
+        if let Some(from_code) = from_lang.to_639_1() {
+            language_codes.insert(from_code.to_string());
+        }
+        if let Some(to_code) = to_lang.to_639_1() {
+            language_codes.insert(to_code.to_string());
+        }
+    }
+
+    let mut languages: Vec<String> = language_codes.into_iter().collect();
+    languages.sort();
+
+    Json(LanguagesResponse { languages })
+}
+
+// Heartbeat endpoints
+pub async fn heartbeat() -> &'static str {
+    "Ready"
+}
+
+pub async fn lbheartbeat() -> &'static str {
+    "Ready"
+}
+
 #[derive(Debug, Deserialize)]
 pub struct DetectLanguageRequest {
     text: String,
@@ -24,6 +71,7 @@ pub async fn detect_language(
     }))
 }
 
+// Modified translate endpoint
 #[derive(Debug, Deserialize)]
 pub struct TranslationRequest {
     text: String,
@@ -36,6 +84,7 @@ pub struct TranslationResponse {
     text: String,
     from: String,
     to: String,
+    result: String,
 }
 
 pub async fn translate(
@@ -46,12 +95,81 @@ pub async fn translate(
         perform_translation(&state, &request.text, request.from, &request.to).await?;
 
     Ok(Json(TranslationResponse {
-        text,
+        text: text.clone(),
         from: from_lang,
         to: to_lang,
+        result: text,
     }))
 }
 
+// Batch translate endpoint
+#[derive(Debug, Deserialize)]
+pub struct BatchTranslationRequest {
+    texts: Vec<String>,
+    from: Option<String>,
+    to: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BatchTranslationResponse {
+    results: Vec<String>,
+}
+
+pub async fn translate_batch(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<BatchTranslationRequest>,
+) -> Result<Json<BatchTranslationResponse>, AppError> {
+    let mut results = Vec::with_capacity(request.texts.len());
+
+    for text in request.texts {
+        let (translated_text, _from_lang, _to_lang) =
+            perform_translation(&state, &text, request.from.clone(), &request.to).await?;
+        results.push(translated_text);
+    }
+
+    Ok(Json(BatchTranslationResponse { results }))
+}
+
+// Google Translate compatible endpoint
+#[derive(Debug, Deserialize)]
+pub struct GoogleTranslateRequest {
+    q: String,
+    source: Option<String>,
+    target: String,
+    format: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GoogleTranslateItem {
+    #[serde(rename = "translatedText")]
+    translated_text: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GoogleTranslateData {
+    translations: Vec<GoogleTranslateItem>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GoogleTranslateResponse {
+    data: GoogleTranslateData,
+}
+
+pub async fn translate_google(
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<GoogleTranslateRequest>,
+) -> Result<Json<GoogleTranslateResponse>, AppError> {
+    let (translated_text, _from_lang, _to_lang) =
+        perform_translation(&state, &request.q, request.source, &request.target).await?;
+
+    Ok(Json(GoogleTranslateResponse {
+        data: GoogleTranslateData {
+            translations: vec![GoogleTranslateItem { translated_text }],
+        },
+    }))
+}
+
+// Original endpoint handlers for backward compatibility
 #[derive(Debug, Deserialize)]
 pub struct KissTranslationRequest {
     text: String,
