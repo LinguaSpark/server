@@ -27,6 +27,22 @@ const ENV_SERVER_PORT: &str = "PORT";
 const ENV_API_KEY: &str = "API_KEY";
 const ENV_LOG_LEVEL: &str = "RUST_LOG";
 
+// Environment variable aliases
+const ENV_API_KEY_ALIAS: &str = "CORE_API_TOKEN";
+const ENV_SERVER_PORT_ALIAS: &str = "CORE_PORT";
+const ENV_LOG_LEVEL_ALIAS: &str = "CORE_LOG_LEVEL";
+const ENV_NUM_WORKERS_ALIAS: &str = "CORE_NUM_WORKERS";
+
+/// Helper function to get environment variable with alias support
+fn get_env_with_alias(primary: &str, alias: &str) -> Option<String> {
+    std::env::var(primary).ok().or_else(|| std::env::var(alias).ok())
+}
+
+/// Helper function to get environment variable with default value and alias support
+fn get_env_with_alias_or_default(primary: &str, alias: &str, default: &str) -> String {
+    get_env_with_alias(primary, alias).unwrap_or_else(|| default.to_string())
+}
+
 #[derive(Debug, thiserror::Error)]
 enum AppError {
     #[error("Translation error: {0}")]
@@ -72,7 +88,7 @@ async fn auth_middleware(
     request: axum::extract::Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let expected_key = std::env::var(ENV_API_KEY).unwrap_or_default();
+    let expected_key = get_env_with_alias(ENV_API_KEY, ENV_API_KEY_ALIAS).unwrap_or_default();
 
     if !expected_key.is_empty() {
         let header_key = headers
@@ -160,7 +176,9 @@ async fn shutdown_signal() {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    if std::env::var(ENV_LOG_LEVEL).is_err() {
+    // Check for log level with alias support
+    let log_level = get_env_with_alias(ENV_LOG_LEVEL, ENV_LOG_LEVEL_ALIAS);
+    if log_level.is_none() {
         tracing_subscriber::fmt()
             .with_max_level(tracing::Level::INFO)
             .init();
@@ -183,14 +201,12 @@ async fn main() -> anyhow::Result<()> {
             default_dir
         });
 
-    let num_workers = std::env::var(ENV_NUM_WORKERS)
-        .ok()
+    let num_workers = get_env_with_alias(ENV_NUM_WORKERS, ENV_NUM_WORKERS_ALIAS)
         .and_then(|s| s.parse::<usize>().ok())
         .unwrap_or(1);
 
     let server_ip = std::env::var(ENV_SERVER_IP).unwrap_or_else(|_| "127.0.0.1".to_string());
-    let server_port = std::env::var(ENV_SERVER_PORT)
-        .ok()
+    let server_port = get_env_with_alias(ENV_SERVER_PORT, ENV_SERVER_PORT_ALIAS)
         .and_then(|s| s.parse::<u16>().ok())
         .unwrap_or(3000);
 
