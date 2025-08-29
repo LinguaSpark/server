@@ -10,7 +10,7 @@ use axum::{
 use isolang::Language;
 use linguaspark::Translator;
 use std::{fs, io, net::SocketAddr, path::PathBuf, sync::Arc};
-use tokio::net::TcpListener;
+use tokio::{net::TcpListener, signal};
 use tower_http::{
     cors::{Any, CorsLayer},
     trace::TraceLayer,
@@ -130,6 +130,34 @@ fn load_models_manually(
     Ok(models)
 }
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {
+            info!("Received Ctrl+C, shutting down gracefully...");
+        },
+        _ = terminate => {
+            info!("Received SIGTERM, shutting down gracefully...");
+        },
+    }
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     if std::env::var(ENV_LOG_LEVEL).is_err() {
@@ -198,11 +226,14 @@ async fn main() -> anyhow::Result<()> {
     // Routes that don't require authentication
     let public_routes = Router::new()
         .route("/version", get(endpoint::version))
-        .route("/health", get(async || {
-            Json(serde_json::json!({
-                "status": "ok",
-            }))
-        }))
+        .route(
+            "/health",
+            get(async || {
+                Json(serde_json::json!({
+                    "status": "ok",
+                }))
+            }),
+        )
         .route("/__heartbeat__", get(endpoint::heartbeat))
         .route("/__lbheartbeat__", get(endpoint::lbheartbeat));
 
@@ -225,7 +256,11 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context(format!("Failed to bind to address: {}", addr))?;
 
-    axum::serve(listener, app).await.context("Server error")?;
+    axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
+        .await
+        .context("Server error")?;
 
+    info!("Server has been shut down gracefully");
     Ok(())
 }
