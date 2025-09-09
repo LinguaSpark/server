@@ -223,6 +223,7 @@ async fn main() -> anyhow::Result<()> {
 
     let cors = CorsLayer::new()
         .allow_origin(Any)
+        .allow_credentials(true)
         .allow_methods(Any)
         .allow_headers(Any);
 
