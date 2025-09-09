@@ -12,7 +12,10 @@ use linguaspark::Translator;
 use std::{fs, io, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{net::TcpListener, signal};
 use tower_http::{
-    cors::{AllowOrigin, CorsLayer, Any},
+    cors::{
+        AllowCredentials, AllowHeaders, AllowMethods, AllowOrigin, AllowPrivateNetwork, Any,
+        CorsLayer,
+    },
     trace::TraceLayer,
 };
 use tracing::{debug, error, info};
@@ -35,7 +38,9 @@ const ENV_NUM_WORKERS_ALIAS: &str = "CORE_NUM_WORKERS";
 
 /// Helper function to get environment variable with alias support
 fn get_env_with_alias(primary: &str, alias: &str) -> Option<String> {
-    std::env::var(primary).ok().or_else(|| std::env::var(alias).ok())
+    std::env::var(primary)
+        .ok()
+        .or_else(|| std::env::var(alias).ok())
 }
 
 /// Helper function to get environment variable with default value and alias support
@@ -223,9 +228,10 @@ async fn main() -> anyhow::Result<()> {
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::mirror_request())
-        .allow_credentials(true)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_credentials(AllowCredentials::yes())
+        .allow_methods(AllowMethods::mirror_request())
+        .allow_headers(AllowHeaders::mirror_request())
+        .allow_private_network(AllowPrivateNetwork::yes());
 
     // Routes that require authentication
     let authenticated_routes = Router::new()
