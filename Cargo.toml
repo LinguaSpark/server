@@ -3,6 +3,14 @@ name = "linguaspark-server"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "linguaspark_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "linguaspark-server"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 axum = "0.8"
@@ -17,6 +25,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 whichlang = "0.1"
 
 linguaspark = { git = "https://github.com/LinguaSpark/core.git", branch = "main" }
+
+[dev-dependencies]
+tokio-test = "0.4"
 
 [profile.release]
 strip = true
