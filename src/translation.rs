@@ -70,6 +70,11 @@ pub async fn perform_translation(
     let from_code = get_iso_code(&source_lang)?;
     let to_code = get_iso_code(&target_lang)?;
 
+    // If source and target languages are the same, return the original text
+    if from_code == to_code {
+        return Ok((text.to_string(), from_code.to_string(), to_code.to_string()));
+    }
+
     if !state.translator.is_supported(from_code, to_code)? {
         return Err(AppError::TranslationError(format!(
             "Translation from '{}' to '{}' is not supported",
