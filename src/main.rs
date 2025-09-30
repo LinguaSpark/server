@@ -13,8 +13,7 @@ use std::{fs, io, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{net::TcpListener, signal};
 use tower_http::{
     cors::{
-        AllowCredentials, AllowHeaders, AllowMethods, AllowOrigin, AllowPrivateNetwork, Any,
-        CorsLayer,
+        AllowCredentials, AllowHeaders, AllowMethods, AllowOrigin, AllowPrivateNetwork, CorsLayer,
     },
     trace::TraceLayer,
 };
@@ -193,18 +192,29 @@ async fn main() -> anyhow::Result<()> {
 
     let models_dir = std::env::var(ENV_MODELS_PATH)
         .map(PathBuf::from)
-        .context(format!(
-            "Failed to get environment variable {}",
-            ENV_MODELS_PATH
-        ))
         .unwrap_or_else(|_| {
-            let default_dir = PathBuf::from("models");
-            if !default_dir.exists() {
-                fs::create_dir_all(&default_dir)
-                    .expect("Failed to create default models directory");
+            // 在调试模式下，默认使用与 Cargo.toml 同级的 models 目录
+            #[cfg(debug_assertions)]
+            {
+                let cargo_dir = std::env::var("CARGO_MANIFEST_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default());
+                cargo_dir.join("models")
             }
-            default_dir
+            #[cfg(not(debug_assertions))]
+            {
+                PathBuf::from("models")
+            }
         });
+
+    // 确保 models 目录存在
+    if !models_dir.exists() {
+        info!("Creating models directory at: {}", models_dir.display());
+        fs::create_dir_all(&models_dir).context(format!(
+            "Failed to create models directory: {}",
+            models_dir.display()
+        ))?;
+    }
 
     let num_workers = get_env_with_alias(ENV_NUM_WORKERS, ENV_NUM_WORKERS_ALIAS)
         .and_then(|s| s.parse::<usize>().ok())
