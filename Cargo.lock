@@ -391,6 +391,7 @@ checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 [[package]]
 name = "linguaspark"
 version = "0.1.0"
+source = "git+https://github.com/LinguaSpark/core.git?branch=main#6a2bc711cce73bc053675c0293dd37c8029e62dd"
 dependencies = [
  "intel-mkl-tool",
  "minreq",

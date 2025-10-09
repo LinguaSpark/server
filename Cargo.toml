@@ -24,7 +24,7 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 whichlang = "0.1"
 
-linguaspark = { path = "../core" }
+linguaspark = { git = "https://github.com/LinguaSpark/core.git", branch = "main" }
 
 [dev-dependencies]
 tokio-test = "0.4"
