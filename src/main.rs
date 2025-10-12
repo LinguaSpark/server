@@ -12,7 +12,9 @@ use linguaspark::Translator;
 use std::{fs, io, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{net::TcpListener, signal};
 use tower_http::{
-    cors::{Any, CorsLayer},
+    cors::{
+        AllowCredentials, AllowHeaders, AllowMethods, AllowOrigin, AllowPrivateNetwork, CorsLayer,
+    },
     trace::TraceLayer,
 };
 use tracing::{debug, error, info};
@@ -206,9 +208,11 @@ async fn main() -> anyhow::Result<()> {
     let app_state = Arc::new(AppState { translator, models });
 
     let cors = CorsLayer::new()
-        .allow_origin(Any)
-        .allow_methods(Any)
-        .allow_headers(Any);
+        .allow_origin(AllowOrigin::mirror_request())
+        .allow_credentials(AllowCredentials::yes())
+        .allow_methods(AllowMethods::mirror_request())
+        .allow_headers(AllowHeaders::mirror_request())
+        .allow_private_network(AllowPrivateNetwork::yes());
 
     let app = Router::new()
         .route("/translate", post(endpoint::translate))
