@@ -6,21 +6,47 @@ main:
       stages:
         - name: download models
           script: |
+            set -e
             mkdir -p models-enzh/enzh
-            base_url="https://github.com/mozilla/firefox-translations-models/raw/refs/heads/main/models/base/enzh"
+            models_json_url="https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json"
+            echo "Fetching models.json from $models_json_url"
+            curl -fsSL "$models_json_url" -o models.json || { echo "Failed to download models.json"; exit 1; }
+            base_url=$(jq -r '.baseUrl' models.json)
+            if [ -z "$base_url" ] || [ "$base_url" = "null" ]; then
+              echo "Failed to extract baseUrl from models.json"
+              exit 1
+            fi
+            echo "Base URL: $base_url"
+            # Get the first en-zh model (architecture: base)
+            model_data=$(jq -r '.models."en-zh"[0]' models.json)
+            if [ -z "$model_data" ] || [ "$model_data" = "null" ]; then
+              echo "No en-zh model found in models.json"
+              exit 1
+            fi
+            # Extract file paths
+            lex_path=$(echo "$model_data" | jq -r '.files.lexicalShortlist.path')
+            model_path=$(echo "$model_data" | jq -r '.files.model.path')
+            src_vocab_path=$(echo "$model_data" | jq -r '.files.srcVocab.path')
+            trg_vocab_path=$(echo "$model_data" | jq -r '.files.trgVocab.path')
             files=(
-              "lex.50.50.enzh.s2t.bin.gz"
-              "model.enzh.intgemm.alphas.bin.gz"
-              "srcvocab.enzh.spm.gz"
-              "trgvocab.enzh.spm.gz"
+              "$lex_path"
+              "$model_path"
+              "$src_vocab_path"
+              "$trg_vocab_path"
             )
-            for file in "${files[@]}"; do
-              echo "Downloading $file"
-              curl -sL "$base_url/$file" -o "models-enzh/enzh/$file"
+            for file_path in "${files[@]}"; do
+              if [ -z "$file_path" ] || [ "$file_path" = "null" ]; then
+                echo "Invalid file path in model data"
+                exit 1
+              fi
+              file=$(basename "$file_path")
+              echo "Downloading $file from $base_url/$file_path"
+              curl -fsSL "$base_url/$file_path" -o "models-enzh/enzh/$file" || { echo "Failed to download $file"; exit 1; }
               gunzip -f "models-enzh/enzh/$file"
               extracted_file="${file%.gz}"
               echo "$extracted_file downloaded and extracted"
             done
+            rm -f models.json
             echo "Download completed. Model structure:"
             pwd
             ls -R models-enzh
