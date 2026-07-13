@@ -39,6 +39,9 @@ While searching for similar projects, I found Mozilla's [translation-service](ht
 
 Docker is the **only recommended** deployment method for this service.
 
+The official GHCR image supports both `linux/amd64` and `linux/arm64`. Docker
+automatically pulls the image matching the host architecture.
+
 ### Option 1: Using pre-built image (with your own translation models)
 
 ```bash
