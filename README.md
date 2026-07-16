@@ -3,7 +3,7 @@
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/LinguaSpark/server)
 [![Docker Image](https://img.shields.io/badge/Docker-Image-blue.svg)](https://github.com/LinguaSpark/server/pkgs/container/translation-service)
 
-A lightweight multilingual translation service based on Rust and Bergamot translation engine, compatible with multiple translation frontend APIs.
+A lightweight multilingual translation service powered by the pure Rust LinguaSpark inference engine and compatible with multiple translation frontend APIs.
 
 [简体中文](README_ZH.md)
 
@@ -16,7 +16,7 @@ While searching for similar projects, I found Mozilla's [translation-service](ht
 ## Features
 
 - 💪 Written in Rust for excellent performance and low memory footprint
-- 🔄 Based on [Bergamot Translator](https://github.com/browsermt/bergamot-translator) engine used in Firefox
+- 🔄 Pure Rust inference through [LinguaSpark](https://github.com/LinguaSpark/linguaspark)
 - 🧠 Compatible with [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
 - 🔍 Built-in language detection with automatic source language identification
 - 🔌 Supports multiple translation API formats:
@@ -31,7 +31,7 @@ While searching for similar projects, I found Mozilla's [translation-service](ht
 ## Tech Stack
 
 - **Web Framework**: [Axum](https://github.com/tokio-rs/axum)
-- **Translation Engine**: [Bergamot Translator](https://github.com/browsermt/bergamot-translator)
+- **Translation Engine**: [LinguaSpark](https://github.com/LinguaSpark/linguaspark)
 - **Translation Models**: [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
 - **Language Detection**: [Whichlang](https://github.com/quickwit-oss/whichlang)
 
@@ -60,7 +60,7 @@ docker run -d --name translation-service \
   docker.cnb.cool/aalivexy/translation-service:latest
 ```
 
-> Note: The English-Chinese model image is about 70MiB, and each worker uses approximately 300MiB+ of memory with low translation latency.
+> Note: Model weights are shared by all inference executors. When `NUM_WORKERS` is unset, the service uses the available logical CPU count.
 
 ### Docker Compose Deployment
 
@@ -100,14 +100,14 @@ FROM ghcr.io/linguaspark/server:main
 COPY ./your-models-directory /app/models
 
 ENV MODELS_DIR=/app/models
-ENV NUM_WORKERS=1
+ENV NUM_WORKERS=
 ENV IP=0.0.0.0
 ENV PORT=3000
 ENV RUST_LOG=info
 
 EXPOSE 3000
 
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/linguaspark-server"]
 ```
 
 ## Translation Models
@@ -119,25 +119,27 @@ ENTRYPOINT ["/app/server"]
 
 ```
 models/
-├── enzh/  # Language pair directory name format: "[source language code][target language code]"
-│   ├── model.intgemm8.bin  # Translation model
-│   ├── model.s2t.bin       # Shortlist file
-│   ├── srcvocab.spm        # Source language vocabulary
-│   └── trgvocab.spm        # Target language vocabulary
+├── en-zh/  # Both "en-zh" and the legacy "enzh" form are accepted
+│   ├── model.enzh.intgemm.alphas.bin.gz
+│   ├── lex.50.50.enzh.s2t.bin.gz
+│   ├── srcvocab.enzh.spm.gz
+│   └── trgvocab.enzh.spm.gz
 └── zhen/  # Another language pair
     └── ...
 ```
 
+Assets may be gzip-compressed (`.gz`) or already decompressed. Models with a single `vocab*.spm[.gz]` file are also supported as shared-vocabulary models.
+
 ### Language Pair Support
 
-The translation service will automatically scan all language pair directories under the `models` directory and load them. Directory names should follow the `[source language][target language]` format using [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) language codes.
+The translation service automatically scans all language pair directories under `models`. Directory names must use either `enzh` or `en-zh` form with [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) language codes.
 
 ## Environment Variables
 
 | Variable Name | Description | Default Value |
 |---------------|-------------|---------------|
 | `MODELS_DIR`  | Path to models directory | `/app/models` |
-| `NUM_WORKERS` | Number of translation worker threads | `1` |
+| `NUM_WORKERS` | Global maximum number of concurrent inference tasks; empty uses available logical CPUs | `""` |
 | `IP`          | IP address for the service to listen on | `127.0.0.1` |
 | `PORT`        | Port for the service to listen on | `3000` |
 | `API_KEY`     | API key (leave empty to disable) | `""` |
@@ -316,7 +318,7 @@ Response:
 
 ## Authentication
 
-If the `API_KEY` environment variable is set, all API requests must provide authentication credentials using one of the following methods:
+If the `API_KEY` environment variable is set, all API requests except `GET /health` must provide authentication credentials using one of the following methods:
 
 1. Authorization header: `Authorization: Bearer your_api_key`
 2. Query parameter: `?token=your_api_key`
@@ -327,7 +329,7 @@ This project is open-sourced under the AGPL-3.0 license.
 
 ## Acknowledgements
 
-- [Bergamot Translator](https://github.com/browsermt/bergamot-translator) - Translation engine
+- [LinguaSpark](https://github.com/LinguaSpark/linguaspark) - Pure Rust translation inference
 - [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) - Translation models
 - [MTranServer](https://github.com/xxnuo/MTranServer/) - Inspiration
 - [Mozilla Translation Service](https://github.com/mozilla/translation-service/) - Reference implementation

@@ -6,17 +6,18 @@ edition = "2024"
 [dependencies]
 anyhow = "1"
 axum = "0.8"
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 isolang = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 tokio = { version = "1", features = ["full"] }
-tower-http = { version = "0.6", features = ["cors", "trace"] }
+tower-http = { version = "0.7", features = ["cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 whichlang = "0.1"
 
-linguaspark = { git = "https://github.com/LinguaSpark/core.git", branch = "main" }
+linguaspark = { git = "https://github.com/LinguaSpark/linguaspark.git", rev = "ed78244" }
 
 [profile.release]
 strip = true

@@ -1,6 +1,6 @@
 use crate::{
     AppError, AppState,
-    translation::{detect_language_code, perform_translation},
+    translation::{detect_language_code, perform_batch_translation, perform_translation},
 };
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
@@ -102,22 +102,19 @@ pub async fn translate_immersive(
     State(state): State<Arc<AppState>>,
     Json(request): Json<ImmersiveTranslationRequest>,
 ) -> Result<Json<ImmersiveTranslationResponse>, AppError> {
-    let mut translations = Vec::with_capacity(request.text_list.len());
-
-    for text in request.text_list {
-        let (translated_text, from_lang, _) = perform_translation(
-            &state,
-            &text,
-            request.source_lang.clone(),
-            &request.target_lang,
-        )
-        .await?;
-
-        translations.push(ImmersiveTranslationItem {
-            detected_source_lang: from_lang,
-            text: translated_text,
-        });
-    }
+    let translations = perform_batch_translation(
+        &state,
+        request.text_list,
+        request.source_lang,
+        &request.target_lang,
+    )
+    .await?
+    .into_iter()
+    .map(|(text, detected_source_lang)| ImmersiveTranslationItem {
+        detected_source_lang,
+        text,
+    })
+    .collect();
 
     Ok(Json(ImmersiveTranslationResponse { translations }))
 }
@@ -142,21 +139,21 @@ pub async fn translate_hcfy(
     Json(request): Json<HcfyTranslationRequest>,
 ) -> Result<Json<HcfyTranslationResponse>, AppError> {
     const LANGUAGE_CODE_MAP: &[(&str, &str)] =
-        &[("中文(简体)", "zh"), ("英语", "en"), ("日语", "jp")];
+        &[("中文(简体)", "zh"), ("英语", "en"), ("日语", "ja")];
 
     fn convert_language_name(lang: &str) -> String {
         LANGUAGE_CODE_MAP
             .iter()
             .find(|&&(name, _)| name == lang)
             .map(|&(_, code)| code)
-            .unwrap_or_else(|| lang)
+            .unwrap_or(lang)
             .to_string()
     }
 
     fn get_language_name(code: &str) -> String {
         LANGUAGE_CODE_MAP
             .iter()
-            .find(|&&(_, c)| c == code)
+            .find(|&&(_, mapped_code)| mapped_code == code)
             .map(|&(name, _)| name)
             .unwrap_or(code)
             .to_string()
@@ -190,7 +187,7 @@ pub async fn translate_hcfy(
 #[derive(Debug, Deserialize)]
 pub struct DeeplxTranslationRequest {
     text: String,
-    source_lang: String,
+    source_lang: Option<String>,
     target_lang: String,
 }
 
@@ -212,7 +209,7 @@ pub async fn translate_deeplx(
     let (text, from_lang, to_lang) = perform_translation(
         &state,
         &request.text,
-        Some(request.source_lang.to_lowercase()),
+        request.source_lang.map(|lang| lang.to_lowercase()),
         &request.target_lang.to_lowercase(),
     )
     .await?;

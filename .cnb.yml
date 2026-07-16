@@ -7,7 +7,8 @@ main:
         - name: download models
           script: |
             set -e
-            mkdir -p models-enzh/enzh
+            rm -rf models/en-zh
+            mkdir -p models/en-zh
             models_json_url="https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/db/models.json"
             echo "Fetching models.json from $models_json_url"
             curl -fsSL "$models_json_url" -o models.json || { echo "Failed to download models.json"; exit 1; }
@@ -17,8 +18,8 @@ main:
               exit 1
             fi
             echo "Base URL: $base_url"
-            # Get the first en-zh model (architecture: base)
-            model_data=$(jq -r '.models."en-zh"[0]' models.json)
+            # Get the en-zh base model
+            model_data=$(jq -r '[.models."en-zh"[] | select(.architecture == "base")][0]' models.json)
             if [ -z "$model_data" ] || [ "$model_data" = "null" ]; then
               echo "No en-zh model found in models.json"
               exit 1
@@ -41,18 +42,16 @@ main:
               fi
               file=$(basename "$file_path")
               echo "Downloading $file from $base_url/$file_path"
-              curl -fsSL "$base_url/$file_path" -o "models-enzh/enzh/$file" || { echo "Failed to download $file"; exit 1; }
-              gunzip -f "models-enzh/enzh/$file"
-              extracted_file="${file%.gz}"
-              echo "$extracted_file downloaded and extracted"
+              curl -fsSL "$base_url/$file_path" -o "models/en-zh/$file" || { echo "Failed to download $file"; exit 1; }
+              echo "$file downloaded"
             done
             rm -f models.json
             echo "Download completed. Model structure:"
             pwd
-            ls -R models-enzh
+            ls -R models
         - name: docker login
           script: docker login -u ${CNB_TOKEN_USER_NAME} -p "${CNB_TOKEN}" ${CNB_DOCKER_REGISTRY}
         - name: docker build
-          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest -f Dockerfile.enzh .
+          script: docker build -t ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest -f Dockerfile.enzh models
         - name: docker push
           script: docker push ${CNB_DOCKER_REGISTRY}/${CNB_REPO_SLUG_LOWERCASE}:latest

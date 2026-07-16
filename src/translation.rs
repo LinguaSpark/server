@@ -25,16 +25,28 @@ fn get_iso_code(lang: &Language) -> Result<&'static str, AppError> {
 }
 
 pub fn detect_language_code(text: &str) -> Result<&'static str, AppError> {
-    get_iso_code(
-        &Language::from_639_3(whichlang::detect_language(text).three_letter_code()).ok_or_else(
-            || {
-                AppError::TranslationError(format!(
-                    "Failed to identify language for text: '{}'",
-                    text
-                ))
-            },
-        )?,
-    )
+    get_iso_code(&detect_language(text)?)
+}
+
+fn detect_language(text: &str) -> Result<Language, AppError> {
+    Language::from_639_3(whichlang::detect_language(text).three_letter_code()).ok_or_else(|| {
+        AppError::TranslationError(format!("Failed to identify language for text: '{}'", text))
+    })
+}
+
+fn resolve_source_language(
+    state: &AppState,
+    text: &str,
+    from_lang: Option<&str>,
+    target_lang: Language,
+) -> Result<Language, AppError> {
+    match from_lang {
+        None | Some("") | Some("auto") => match state.sole_language_pair {
+            Some((source, target)) if target == target_lang => Ok(source),
+            _ => detect_language(text),
+        },
+        Some(code) => parse_language_code(code),
+    }
 }
 
 pub async fn perform_translation(
@@ -43,29 +55,9 @@ pub async fn perform_translation(
     from_lang: Option<String>,
     to_lang: &str,
 ) -> Result<(String, String, String), AppError> {
-    let source_lang = match from_lang.as_deref() {
-        None | Some("") | Some("auto") => {
-            if state.models.len() == 1 {
-                // If there's only one model, use it as the source language
-                state
-                    .models
-                    .first()
-                    .map(|model| model.0)
-                    .unwrap_or(Language::Eng)
-            } else {
-                Language::from_639_3(whichlang::detect_language(text).three_letter_code())
-                    .ok_or_else(|| {
-                        AppError::TranslationError(format!(
-                            "Failed to detect language for text: '{}'",
-                            text
-                        ))
-                    })?
-            }
-        }
-        Some(code) => parse_language_code(code)?,
-    };
-
     let target_lang = parse_language_code(to_lang)?;
+
+    let source_lang = resolve_source_language(state, text, from_lang.as_deref(), target_lang)?;
 
     let from_code = get_iso_code(&source_lang)?;
     let to_code = get_iso_code(&target_lang)?;
@@ -75,14 +67,51 @@ pub async fn perform_translation(
         return Ok((text.to_string(), from_code.to_string(), to_code.to_string()));
     }
 
-    if !state.translator.is_supported(from_code, to_code)? {
-        return Err(AppError::TranslationError(format!(
-            "Translation from '{}' to '{}' is not supported",
-            from_code, to_code
+    let translated_text = state
+        .inference
+        .translate(source_lang, target_lang, text)
+        .await?;
+
+    Ok((translated_text, from_code.to_string(), to_code.to_string()))
+}
+
+pub async fn perform_batch_translation(
+    state: &Arc<AppState>,
+    texts: Vec<String>,
+    from_lang: Option<String>,
+    to_lang: &str,
+) -> Result<Vec<(String, String)>, AppError> {
+    if texts.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let target_lang = parse_language_code(to_lang)?;
+    let source_lang = resolve_source_language(state, &texts[0], from_lang.as_deref(), target_lang)?;
+    let source_code = get_iso_code(&source_lang)?.to_string();
+
+    if source_lang == target_lang {
+        return Ok(texts
+            .into_iter()
+            .map(|text| (text, source_code.clone()))
+            .collect());
+    }
+
+    let input_count = texts.len();
+    let translations = state
+        .inference
+        .translate_batch(source_lang, target_lang, texts)
+        .await?;
+
+    if translations.len() != input_count {
+        return Err(AppError::InferenceError(format!(
+            "Batch translation returned {} result(s) for {} input(s)",
+            translations.len(),
+            input_count
         )));
     }
 
-    let translated_text = state.translator.translate(from_code, to_code, text)?;
-
-    Ok((translated_text, from_code.to_string(), to_code.to_string()))
+    Ok(translations
+        .into_iter()
+        .map(|translation| (translation, source_code.clone()))
+        .collect())
 }

@@ -3,7 +3,7 @@
 [![GitHub Repo](https://img.shields.io/badge/GitHub-Repository-blue.svg)](https://github.com/LinguaSpark/server)
 [![Docker Image](https://img.shields.io/badge/Docker-Image-blue.svg)](https://github.com/LinguaSpark/server/pkgs/container/translation-service)
 
-一个基于 Rust 和 Bergamot 翻译引擎的轻量级多语言翻译服务，兼容多种翻译前端 API。
+一个由纯 Rust LinguaSpark 推理引擎驱动的轻量级多语言翻译服务，兼容多种翻译前端 API。
 
 [English](README.md)
 
@@ -16,7 +16,7 @@
 ## 功能特性
 
 - 💪 使用 Rust 编写，性能优异，内存占用低
-- 🔄 基于 Firefox 同款的 [Bergamot Translator](https://github.com/browsermt/bergamot-translator) 引擎
+- 🔄 使用纯 Rust [LinguaSpark](https://github.com/LinguaSpark/linguaspark) 推理引擎
 - 🧠 兼容 [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
 - 🔍 内置语言检测，支持自动识别源语言
 - 🔌 支持多种翻译前端 API 格式:
@@ -31,7 +31,7 @@
 ## 技术栈
 
 - **Web 框架**: [Axum](https://github.com/tokio-rs/axum)
-- **翻译引擎**: [Bergamot Translator](https://github.com/browsermt/bergamot-translator)
+- **翻译引擎**: [LinguaSpark](https://github.com/LinguaSpark/linguaspark)
 - **翻译模型**: [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
 - **语言检测**: [Whichlang](https://github.com/quickwit-oss/whichlang)
 
@@ -47,7 +47,7 @@ docker run -d --name translation-service \
   docker.cnb.cool/aalivexy/translation-service:latest
 ```
 
-> 注意：自带英译中模型的镜像大小约 70MiB，启动后单 worker 大约占用内存 300MiB+，且翻译延迟较低。
+> 注意：所有推理执行器共享模型权重。未设置 `NUM_WORKERS` 时，服务会使用可用逻辑 CPU 数量。
 
 ### 方式二：使用预构建镜像（不含翻译模型）
 
@@ -98,14 +98,14 @@ FROM ghcr.io/linguaspark/server:main
 COPY ./your-models-directory /app/models
 
 ENV MODELS_DIR=/app/models
-ENV NUM_WORKERS=1
+ENV NUM_WORKERS=
 ENV IP=0.0.0.0
 ENV PORT=3000
 ENV RUST_LOG=info
 
 EXPOSE 3000
 
-ENTRYPOINT ["/app/server"]
+ENTRYPOINT ["/app/linguaspark-server"]
 ```
 
 ## 翻译模型
@@ -117,25 +117,27 @@ ENTRYPOINT ["/app/server"]
 
 ```
 models/
-├── enzh/  # 语言对目录名格式为 "[源语言代码][目标语言代码]"
-│   ├── model.intgemm8.bin  # 翻译模型
-│   ├── model.s2t.bin       # shortlist 文件
-│   ├── srcvocab.spm        # 源语言词表
-│   └── trgvocab.spm        # 目标语言词表
+├── en-zh/  # 同时接受 "en-zh" 和旧版 "enzh" 形式
+│   ├── model.enzh.intgemm.alphas.bin.gz
+│   ├── lex.50.50.enzh.s2t.bin.gz
+│   ├── srcvocab.enzh.spm.gz
+│   └── trgvocab.enzh.spm.gz
 └── zhen/  # 另一个语言对
     └── ...
 ```
 
+模型资产既可以保留 `.gz` 压缩，也可以使用已解压文件。只有一个 `vocab*.spm[.gz]` 的共享词表模型同样受支持。
+
 ### 语言对支持
 
-翻译服务会自动扫描 `models` 目录下的所有语言对目录，并加载它们。目录名应遵循 `[源语言][目标语言]` 的格式，使用 [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) 语言代码。
+翻译服务会自动扫描 `models` 目录下的语言对目录并加载模型。目录名必须使用 `enzh` 或 `en-zh` 形式，并采用 [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) 语言代码。
 
 ## 环境变量
 
 | 变量名 | 描述 | 默认值 |
 |--------|------|--------|
 | `MODELS_DIR` | 模型目录路径 | `/app/models` |
-| `NUM_WORKERS` | 翻译工作线程数 | `1` |
+| `NUM_WORKERS` | 整个进程的最大并发推理数；留空时使用可用逻辑 CPU 数量 | `""` |
 | `IP` | 服务监听的 IP 地址 | `127.0.0.1` |
 | `PORT` | 服务监听的端口 | `3000` |
 | `API_KEY` | API 密钥（留空则不启用） | `""` |
@@ -314,7 +316,7 @@ GET /health
 
 ## 认证
 
-如果设置了 `API_KEY` 环境变量，所有 API 请求都需要提供认证凭据，支持两种方式：
+如果设置了 `API_KEY` 环境变量，除 `GET /health` 外的所有 API 请求都需要提供认证凭据，支持两种方式：
 
 1. Authorization 头： `Authorization: Bearer your_api_key`
 2. 查询参数： `?token=your_api_key`
@@ -325,7 +327,7 @@ GET /health
 
 ## 致谢
 
-- [Bergamot Translator](https://github.com/browsermt/bergamot-translator) - 提供翻译引擎
+- [LinguaSpark](https://github.com/LinguaSpark/linguaspark) - 提供纯 Rust 翻译推理
 - [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) - 提供翻译模型
 - [MTranServer](https://github.com/xxnuo/MTranServer/) - 提供灵感来源
 - [Mozilla Translation Service](https://github.com/mozilla/translation-service/) - 提供参考实现

@@ -1,14 +1,13 @@
 use anyhow::Context;
 use axum::{
     Router,
-    extract::Json,
+    extract::{Json, State},
     http::{HeaderMap, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
 use isolang::Language;
-use linguaspark::Translator;
 use std::{fs, io, net::SocketAddr, path::PathBuf, sync::Arc};
 use tokio::{net::TcpListener, signal};
 use tower_http::{
@@ -17,9 +16,10 @@ use tower_http::{
     },
     trace::TraceLayer,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 mod endpoint;
+mod inference;
 mod translation;
 
 const ENV_MODELS_PATH: &str = "MODELS_DIR";
@@ -40,8 +40,8 @@ enum AppError {
     #[error("Unauthorized")]
     Unauthorized,
 
-    #[error("Translator error: {0}")]
-    TranslatorError(#[from] linguaspark::TranslatorError),
+    #[error("Inference error: {0}")]
+    InferenceError(String),
 
     #[error("Configuration error: {0}")]
     ConfigError(String),
@@ -56,7 +56,7 @@ impl IntoResponse for AppError {
                 StatusCode::UNAUTHORIZED,
                 "Invalid or missing API key".to_string(),
             ),
-            AppError::TranslatorError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            AppError::InferenceError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
             AppError::ConfigError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
         };
 
@@ -65,18 +65,36 @@ impl IntoResponse for AppError {
 }
 
 struct AppState {
-    translator: Translator,
-    models: Vec<(Language, Language)>,
+    inference: inference::InferenceEngine,
+    sole_language_pair: Option<(Language, Language)>,
+    api_key: Option<String>,
+}
+
+fn resolve_num_workers(
+    value: Option<&str>,
+    available_parallelism: Option<usize>,
+) -> Result<usize, AppError> {
+    match value.filter(|value| !value.is_empty()) {
+        Some(value) => value
+            .parse::<usize>()
+            .ok()
+            .filter(|&workers| workers > 0)
+            .ok_or_else(|| {
+                AppError::ConfigError(format!(
+                    "NUM_WORKERS must be a positive integer, got '{value}'"
+                ))
+            }),
+        None => Ok(available_parallelism.unwrap_or(1)),
+    }
 }
 
 async fn auth_middleware(
+    State(state): State<Arc<AppState>>,
     headers: HeaderMap,
     request: axum::extract::Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let expected_key = std::env::var(ENV_API_KEY).unwrap_or_default();
-
-    if !expected_key.is_empty() {
+    if let Some(expected_key) = state.api_key.as_deref() {
         let header_key = headers
             .get("Authorization")
             .and_then(|header| header.to_str().ok())
@@ -93,43 +111,12 @@ async fn auth_middleware(
             })
         });
 
-        if header_key != Some(&expected_key) && query_key != Some(&expected_key) {
+        if header_key != Some(expected_key) && query_key != Some(expected_key) {
             debug!("Invalid API key");
             return Err(AppError::Unauthorized);
         }
     }
     Ok(next.run(request).await)
-}
-
-fn load_models_manually(
-    translator: &Translator,
-    models_dir: &PathBuf,
-) -> Result<Vec<(Language, Language)>, AppError> {
-    let mut models = Vec::new();
-
-    for entry in fs::read_dir(models_dir)? {
-        let entry = entry?;
-        let model_dir_path = entry.path();
-        let language_pair = entry.file_name().to_string_lossy().into_owned();
-
-        info!("Looking for models in {}", model_dir_path.display());
-        translator.load_model(&language_pair, model_dir_path)?;
-
-        if language_pair.len() >= 4 {
-            let from_lang = translation::parse_language_code(&language_pair[0..2])?;
-            let to_lang = translation::parse_language_code(&language_pair[2..4])?;
-            models.push((from_lang, to_lang));
-        } else {
-            return Err(AppError::ConfigError(format!(
-                "Invalid language pair format: '{}'. Expected format like 'enzh', 'jpen'",
-                language_pair
-            )));
-        }
-
-        info!("Loaded model for language pair '{}'", language_pair);
-    }
-
-    Ok(models)
 }
 
 async fn shutdown_signal() {
@@ -185,10 +172,21 @@ async fn main() -> anyhow::Result<()> {
             default_dir
         });
 
-    let num_workers = std::env::var(ENV_NUM_WORKERS)
-        .ok()
-        .and_then(|s| s.parse::<usize>().ok())
-        .unwrap_or(1);
+    let configured_workers = std::env::var(ENV_NUM_WORKERS).ok();
+    let available_parallelism = if configured_workers.as_deref().is_none_or(str::is_empty) {
+        std::thread::available_parallelism()
+            .map(|parallelism| parallelism.get())
+            .map_err(|error| {
+                tracing::warn!(
+                    "Failed to detect available CPU parallelism: {error}; using 1 worker"
+                );
+                error
+            })
+            .ok()
+    } else {
+        None
+    };
+    let num_workers = resolve_num_workers(configured_workers.as_deref(), available_parallelism)?;
 
     let server_ip = std::env::var(ENV_SERVER_IP).unwrap_or_else(|_| "127.0.0.1".to_string());
     let server_port = std::env::var(ENV_SERVER_PORT)
@@ -197,15 +195,20 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or(3000);
 
     let server_address = format!("{}:{}", server_ip, server_port);
-
-    info!("Initializing translator with {} workers", num_workers);
-    let translator = Translator::new(num_workers).context("Failed to initialize translator")?;
+    let api_key = std::env::var(ENV_API_KEY)
+        .ok()
+        .filter(|key| !key.is_empty());
 
     info!("Loading translation models from {}", models_dir.display());
-    let models = load_models_manually(&translator, &models_dir)
+    let inference = inference::InferenceEngine::load(&models_dir, num_workers)
         .context("Failed to load translation models")?;
+    let sole_language_pair = inference.sole_language_pair();
 
-    let app_state = Arc::new(AppState { translator, models });
+    let app_state = Arc::new(AppState {
+        inference,
+        sole_language_pair,
+        api_key,
+    });
 
     let cors = CorsLayer::new()
         .allow_origin(AllowOrigin::mirror_request())
@@ -214,13 +217,19 @@ async fn main() -> anyhow::Result<()> {
         .allow_headers(AllowHeaders::mirror_request())
         .allow_private_network(AllowPrivateNetwork::yes());
 
-    let app = Router::new()
+    let protected_routes = Router::new()
         .route("/translate", post(endpoint::translate))
         .route("/kiss", post(endpoint::translate_kiss))
         .route("/imme", post(endpoint::translate_immersive))
         .route("/hcfy", post(endpoint::translate_hcfy))
         .route("/deeplx", post(endpoint::translate_deeplx))
         .route("/detect", post(endpoint::detect_language))
+        .route_layer(middleware::from_fn_with_state(
+            Arc::clone(&app_state),
+            auth_middleware,
+        ));
+
+    let app = Router::new()
         .route(
             "/health",
             get(async || {
@@ -229,7 +238,7 @@ async fn main() -> anyhow::Result<()> {
                 }))
             }),
         )
-        .route_layer(middleware::from_fn(auth_middleware))
+        .merge(protected_routes)
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(app_state);
@@ -253,4 +262,20 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Server has been shut down gracefully");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_num_workers;
+
+    #[test]
+    fn resolves_worker_configuration() {
+        assert_eq!(resolve_num_workers(None, Some(8)).unwrap(), 8);
+        assert_eq!(resolve_num_workers(Some(""), Some(4)).unwrap(), 4);
+        assert_eq!(resolve_num_workers(None, None).unwrap(), 1);
+        assert_eq!(resolve_num_workers(Some("3"), Some(8)).unwrap(), 3);
+        assert!(resolve_num_workers(Some("0"), Some(8)).is_err());
+        assert!(resolve_num_workers(Some("invalid"), Some(8)).is_err());
+        assert!(resolve_num_workers(Some("-1"), Some(8)).is_err());
+    }
 }
