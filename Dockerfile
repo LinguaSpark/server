@@ -11,7 +11,6 @@ WORKDIR /app
 COPY --from=builder /app/target/release/linguaspark-server /app/linguaspark-server
 
 ENV MODELS_DIR=/app/models
-ENV NUM_WORKERS=
 ENV IP=0.0.0.0
 ENV PORT=3000
 # ENV ENV_API_KEY=

@@ -18,10 +18,10 @@ main:
               exit 1
             fi
             echo "Base URL: $base_url"
-            # Get the en-zh base model
-            model_data=$(jq -r '[.models."en-zh"[] | select(.architecture == "base")][0]' models.json)
+            # Get the en-zh base-memory model
+            model_data=$(jq -r '[.models."en-zh"[] | select(.architecture == "base-memory")][0]' models.json)
             if [ -z "$model_data" ] || [ "$model_data" = "null" ]; then
-              echo "No en-zh model found in models.json"
+              echo "No en-zh base-memory model found in models.json"
               exit 1
             fi
             # Extract file paths

@@ -47,8 +47,6 @@ docker run -d --name translation-service \
   docker.cnb.cool/aalivexy/translation-service:latest
 ```
 
-> 注意：所有推理执行器共享模型权重。未设置 `NUM_WORKERS` 时，服务会使用可用逻辑 CPU 数量。
-
 ### 方式二：使用预构建镜像（不含翻译模型）
 
 ```bash
@@ -98,7 +96,6 @@ FROM ghcr.io/linguaspark/server:main
 COPY ./your-models-directory /app/models
 
 ENV MODELS_DIR=/app/models
-ENV NUM_WORKERS=
 ENV IP=0.0.0.0
 ENV PORT=3000
 ENV RUST_LOG=info
@@ -137,7 +134,6 @@ models/
 | 变量名 | 描述 | 默认值 |
 |--------|------|--------|
 | `MODELS_DIR` | 模型目录路径 | `/app/models` |
-| `NUM_WORKERS` | 整个进程的最大并发推理数；留空时使用可用逻辑 CPU 数量 | `""` |
 | `IP` | 服务监听的 IP 地址 | `127.0.0.1` |
 | `PORT` | 服务监听的端口 | `3000` |
 | `API_KEY` | API 密钥（留空则不启用） | `""` |

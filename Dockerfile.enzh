@@ -3,7 +3,6 @@ FROM ghcr.io/linguaspark/server:main
 COPY en-zh /app/models/en-zh
 
 ENV MODELS_DIR=/app/models
-ENV NUM_WORKERS=
 ENV IP=0.0.0.0
 ENV PORT=3000
 # ENV ENV_API_KEY=

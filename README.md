@@ -60,8 +60,6 @@ docker run -d --name translation-service \
   docker.cnb.cool/aalivexy/translation-service:latest
 ```
 
-> Note: Model weights are shared by all inference executors. When `NUM_WORKERS` is unset, the service uses the available logical CPU count.
-
 ### Docker Compose Deployment
 
 Create a `compose.yaml` file:
@@ -100,7 +98,6 @@ FROM ghcr.io/linguaspark/server:main
 COPY ./your-models-directory /app/models
 
 ENV MODELS_DIR=/app/models
-ENV NUM_WORKERS=
 ENV IP=0.0.0.0
 ENV PORT=3000
 ENV RUST_LOG=info
@@ -139,7 +136,6 @@ The translation service automatically scans all language pair directories under 
 | Variable Name | Description | Default Value |
 |---------------|-------------|---------------|
 | `MODELS_DIR`  | Path to models directory | `/app/models` |
-| `NUM_WORKERS` | Global maximum number of concurrent inference tasks; empty uses available logical CPUs | `""` |
 | `IP`          | IP address for the service to listen on | `127.0.0.1` |
 | `PORT`        | Port for the service to listen on | `3000` |
 | `API_KEY`     | API key (leave empty to disable) | `""` |
