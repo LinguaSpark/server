@@ -3,7 +3,8 @@ use isolang::Language;
 use std::sync::Arc;
 
 pub fn parse_language_code(code: &str) -> Result<Language, AppError> {
-    Language::from_639_1(code.split('-').next().unwrap_or(code)).ok_or_else(|| {
+    let normalized = code.split('-').next().unwrap_or(code).to_ascii_lowercase();
+    Language::from_639_1(&normalized).ok_or_else(|| {
         AppError::TranslationError(format!(
             "Invalid language code: '{}'. Please use ISO 639-1 format.",
             code
@@ -28,6 +29,10 @@ pub fn detect_language_code(text: &str) -> Result<&'static str, AppError> {
     get_iso_code(&detect_language(text)?)
 }
 
+pub fn normalize_language_code(code: &str) -> Result<&'static str, AppError> {
+    get_iso_code(&parse_language_code(code)?)
+}
+
 fn detect_language(text: &str) -> Result<Language, AppError> {
     Language::from_639_3(whichlang::detect_language(text).three_letter_code()).ok_or_else(|| {
         AppError::TranslationError(format!("Failed to identify language for text: '{}'", text))
@@ -41,7 +46,11 @@ fn resolve_source_language(
     target_lang: Language,
 ) -> Result<Language, AppError> {
     match from_lang {
-        None | Some("") | Some("auto") => match state.sole_language_pair {
+        None | Some("") => match state.sole_language_pair {
+            Some((source, target)) if target == target_lang => Ok(source),
+            _ => detect_language(text),
+        },
+        Some(code) if code.eq_ignore_ascii_case("auto") => match state.sole_language_pair {
             Some((source, target)) if target == target_lang => Ok(source),
             _ => detect_language(text),
         },

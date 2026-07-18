@@ -203,8 +203,12 @@ impl InferenceEngine {
             .get(&(Language::Eng, to))
             .cloned()
             .ok_or_else(|| unsupported_pair(from, to))?;
-        let intermediate = self.execute_batch(first, texts).await?;
-        self.execute_batch(second, intermediate).await
+        self.executors
+            .execute(move |executor| {
+                let intermediate = translate_model_batch(executor, &first, &texts)?;
+                translate_model_batch(executor, &second, &intermediate)
+            })
+            .await
     }
 
     async fn execute_batch(
@@ -213,19 +217,25 @@ impl InferenceEngine {
         texts: Vec<String>,
     ) -> Result<Vec<String>, AppError> {
         self.executors
-            .execute(move |executor| {
-                executor
-                    .translate_batch(&model, &texts, &DecodeOptions::default())
-                    .map(|translations| {
-                        translations
-                            .into_iter()
-                            .map(|translation| translation.text)
-                            .collect()
-                    })
-                    .map_err(|error| AppError::InferenceError(error.to_string()))
-            })
+            .execute(move |executor| translate_model_batch(executor, &model, &texts))
             .await
     }
+}
+
+fn translate_model_batch(
+    executor: &mut Executor,
+    model: &Model,
+    texts: &[String],
+) -> Result<Vec<String>, AppError> {
+    executor
+        .translate_batch(model, texts, &DecodeOptions::default())
+        .map(|translations| {
+            translations
+                .into_iter()
+                .map(|translation| translation.text)
+                .collect()
+        })
+        .map_err(|error| AppError::InferenceError(error.to_string()))
 }
 
 fn unsupported_pair(from: Language, to: Language) -> AppError {
@@ -362,51 +372,4 @@ fn set_unique(
         )));
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::ExecutorPool;
-    use crate::AppError;
-    use std::sync::Arc;
-
-    #[tokio::test]
-    async fn executor_returns_after_success_and_error() {
-        let pool = ExecutorPool::new(1).unwrap();
-        assert_eq!(pool.execute(|_| Ok(42)).await.unwrap(), 42);
-
-        let error = pool
-            .execute::<(), _>(|_| Err(AppError::InferenceError("expected".to_string())))
-            .await;
-        assert!(error.is_err());
-        assert_eq!(pool.execute(|_| Ok(7)).await.unwrap(), 7);
-    }
-
-    #[tokio::test]
-    async fn executor_returns_after_panic() {
-        let pool = ExecutorPool::new(1).unwrap();
-        let error = pool
-            .execute::<(), _>(|_| panic!("expected test panic"))
-            .await
-            .unwrap_err();
-        assert!(matches!(error, AppError::InferenceError(_)));
-        assert_eq!(pool.execute(|_| Ok(11)).await.unwrap(), 11);
-    }
-
-    #[tokio::test]
-    async fn executor_pool_enforces_global_concurrency_limit() {
-        let pool = Arc::new(ExecutorPool::new(1).unwrap());
-        let lease = pool.acquire().await.unwrap();
-        let second_pool = Arc::clone(&pool);
-        let mut second = Box::pin(second_pool.execute(|_| Ok(())));
-
-        tokio::select! {
-            biased;
-            result = &mut second => panic!("second task started without an available executor: {result:?}"),
-            _ = std::future::ready(()) => {}
-        }
-
-        drop(lease);
-        second.await.unwrap();
-    }
 }

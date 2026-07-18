@@ -339,7 +339,7 @@ checksum = "2e126dda6f34391ab7b444f9922055facc83c07a910da3eb16f1e4d9c45dc777"
 [[package]]
 name = "linguaspark"
 version = "0.1.0"
-source = "git+https://github.com/LinguaSpark/linguaspark.git?rev=8725e69#8725e69e2826c812e88d0ac217c00647af29ece0"
+source = "git+https://github.com/LinguaSpark/linguaspark.git?rev=269605c#269605c0a6e78697d94162b71dd97a9d98885276"
 dependencies = [
  "rayon",
  "rten-gemm",

@@ -1,6 +1,9 @@
 use crate::{
     AppError, AppState,
-    translation::{detect_language_code, perform_batch_translation, perform_translation},
+    translation::{
+        detect_language_code, normalize_language_code, perform_batch_translation,
+        perform_translation,
+    },
 };
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
@@ -25,15 +28,29 @@ pub async fn detect_language(
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum TranslationInput {
+    Single(String),
+    Batch(Vec<String>),
+}
+
+#[derive(Debug, Serialize)]
+#[serde(untagged)]
+pub enum TranslationOutput {
+    Single(String),
+    Batch(Vec<String>),
+}
+
+#[derive(Debug, Deserialize)]
 pub struct TranslationRequest {
-    text: String,
+    text: TranslationInput,
     from: Option<String>,
     to: String,
 }
 
 #[derive(Debug, Serialize)]
 pub struct TranslationResponse {
-    text: String,
+    text: TranslationOutput,
     from: String,
     to: String,
 }
@@ -42,8 +59,29 @@ pub async fn translate(
     State(state): State<Arc<AppState>>,
     Json(request): Json<TranslationRequest>,
 ) -> Result<Json<TranslationResponse>, AppError> {
-    let (text, from_lang, to_lang) =
-        perform_translation(&state, &request.text, request.from, &request.to).await?;
+    let (text, from_lang, to_lang) = match request.text {
+        TranslationInput::Single(text) => {
+            let (text, from, to) =
+                perform_translation(&state, &text, request.from, &request.to).await?;
+            (TranslationOutput::Single(text), from, to)
+        }
+        TranslationInput::Batch(texts) => {
+            if texts.is_empty() {
+                return Err(AppError::TranslationError(
+                    "Translation batch must contain at least one text".to_string(),
+                ));
+            }
+            let to = normalize_language_code(&request.to)?.to_string();
+            let translations =
+                perform_batch_translation(&state, texts, request.from, &request.to).await?;
+            let from = translations
+                .first()
+                .map(|(_, from)| from.clone())
+                .expect("non-empty translation batch must return source language");
+            let texts = translations.into_iter().map(|(text, _)| text).collect();
+            (TranslationOutput::Batch(texts), from, to)
+        }
+    };
 
     Ok(Json(TranslationResponse {
         text,

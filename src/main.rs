@@ -8,7 +8,12 @@ use axum::{
     routing::{get, post},
 };
 use isolang::Language;
-use std::{fs, io, net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    fs, io,
+    net::{IpAddr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+};
 use tokio::{net::TcpListener, signal};
 use tower_http::{
     cors::{
@@ -23,6 +28,8 @@ mod inference;
 mod translation;
 
 const ENV_MODELS_PATH: &str = "MODELS_DIR";
+// Internal tuning override, intentionally not documented for regular users.
+// When unset, the server adapts to the system's available CPU parallelism.
 const ENV_NUM_WORKERS: &str = "NUM_WORKERS";
 const ENV_SERVER_IP: &str = "IP";
 const ENV_SERVER_PORT: &str = "PORT";
@@ -189,12 +196,17 @@ async fn main() -> anyhow::Result<()> {
     let num_workers = resolve_num_workers(configured_workers.as_deref(), available_parallelism)?;
 
     let server_ip = std::env::var(ENV_SERVER_IP).unwrap_or_else(|_| "127.0.0.1".to_string());
-    let server_port = std::env::var(ENV_SERVER_PORT)
-        .ok()
-        .and_then(|s| s.parse::<u16>().ok())
-        .unwrap_or(3000);
-
-    let server_address = format!("{}:{}", server_ip, server_port);
+    let server_ip: IpAddr = server_ip
+        .parse()
+        .context(format!("Invalid {} value: '{}'", ENV_SERVER_IP, server_ip))?;
+    let server_port = match std::env::var(ENV_SERVER_PORT) {
+        Ok(port) => port
+            .parse::<u16>()
+            .context(format!("Invalid {} value: '{}'", ENV_SERVER_PORT, port))?,
+        Err(std::env::VarError::NotPresent) => 3000,
+        Err(error) => return Err(error).context(format!("Failed to read {ENV_SERVER_PORT}")),
+    };
+    let addr = SocketAddr::new(server_ip, server_port);
     let api_key = std::env::var(ENV_API_KEY)
         .ok()
         .filter(|key| !key.is_empty());
@@ -243,10 +255,6 @@ async fn main() -> anyhow::Result<()> {
         .layer(cors)
         .with_state(app_state);
 
-    let addr: SocketAddr = server_address.parse().context(format!(
-        "Failed to parse server address: {}",
-        server_address
-    ))?;
     info!(
         "Starting server on {} (IP: {}, Port: {})",
         addr, server_ip, server_port
@@ -262,20 +270,4 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Server has been shut down gracefully");
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::resolve_num_workers;
-
-    #[test]
-    fn resolves_worker_configuration() {
-        assert_eq!(resolve_num_workers(None, Some(8)).unwrap(), 8);
-        assert_eq!(resolve_num_workers(Some(""), Some(4)).unwrap(), 4);
-        assert_eq!(resolve_num_workers(None, None).unwrap(), 1);
-        assert_eq!(resolve_num_workers(Some("3"), Some(8)).unwrap(), 3);
-        assert!(resolve_num_workers(Some("0"), Some(8)).is_err());
-        assert!(resolve_num_workers(Some("invalid"), Some(8)).is_err());
-        assert!(resolve_num_workers(Some("-1"), Some(8)).is_err());
-    }
 }

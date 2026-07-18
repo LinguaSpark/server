@@ -9,7 +9,7 @@ A lightweight multilingual translation service powered by the pure Rust LinguaSp
 
 ## Project Background
 
-This project originated when I discovered the [MTranServer](https://github.com/xxnuo/MTranServer/) repository, which uses [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) for machine translation and is compatible with APIs like Immersive Translate and Kiss Translator, but found that it wasn't open-sourced yet.
+This project originated when I discovered the [MTranServer](https://github.com/xxnuo/MTranServer/) repository, which uses [Firefox Translations Models](https://github.com/mozilla/translations) for machine translation and is compatible with APIs like Immersive Translate and Kiss Translator, but found that it wasn't open-sourced yet.
 
 While searching for similar projects, I found Mozilla's [translation-service](https://github.com/mozilla/translation-service/), which works but hasn't been updated for a year and isn't compatible with Immersive Translate or Kiss Translator APIs. Since that project is written in C++ and I'm not very familiar with C++, I rewrote this project in Rust.
 
@@ -17,7 +17,7 @@ While searching for similar projects, I found Mozilla's [translation-service](ht
 
 - 💪 Written in Rust for excellent performance and low memory footprint
 - 🔄 Pure Rust inference through [LinguaSpark](https://github.com/LinguaSpark/linguaspark)
-- 🧠 Compatible with [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
+- 🧠 Compatible with [Firefox Translations Models](https://github.com/mozilla/translations)
 - 🔍 Built-in language detection with automatic source language identification
 - 🔌 Supports multiple translation API formats:
   - Native API
@@ -32,7 +32,7 @@ While searching for similar projects, I found Mozilla's [translation-service](ht
 
 - **Web Framework**: [Axum](https://github.com/tokio-rs/axum)
 - **Translation Engine**: [LinguaSpark](https://github.com/LinguaSpark/linguaspark)
-- **Translation Models**: [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
+- **Translation Models**: [Firefox Translations Models](https://github.com/mozilla/translations)
 - **Language Detection**: [Whichlang](https://github.com/quickwit-oss/whichlang)
 
 ## Deployment
@@ -111,17 +111,17 @@ ENTRYPOINT ["/app/linguaspark-server"]
 
 ### Getting Models
 
-1. Download pre-trained models from [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
+1. Download pre-trained models from [Firefox Translations Models](https://github.com/mozilla/translations)
 2. Place them in the models directory with the following structure:
 
 ```
 models/
-├── en-zh/  # Both "en-zh" and the legacy "enzh" form are accepted
+├── en-zh/
 │   ├── model.enzh.intgemm.alphas.bin.gz
 │   ├── lex.50.50.enzh.s2t.bin.gz
 │   ├── srcvocab.enzh.spm.gz
 │   └── trgvocab.enzh.spm.gz
-└── zhen/  # Another language pair
+└── zh-en/  # Another language pair
     └── ...
 ```
 
@@ -129,7 +129,7 @@ Assets may be gzip-compressed (`.gz`) or already decompressed. Models with a sin
 
 ### Language Pair Support
 
-The translation service automatically scans all language pair directories under `models`. Directory names must use either `enzh` or `en-zh` form with [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) language codes.
+The translation service automatically scans all language pair directories under `models`. Directory names use the `source-target` form, such as `en-zh` or `zh-en`, with [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) language codes.
 
 ## Environment Variables
 
@@ -164,6 +164,28 @@ Response:
 ```json
 {
   "text": "你好世界",
+  "from": "en",
+  "to": "zh"
+}
+```
+
+The native endpoint also accepts a batch in `text`. All texts in one batch are
+translated as the same source language; when `from` is omitted, the first text
+is used for language detection.
+
+```json
+{
+  "text": ["Hello world", "How are you?"],
+  "from": "en",
+  "to": "zh"
+}
+```
+
+The response keeps the same shape:
+
+```json
+{
+  "text": ["你好世界", "你好吗？"],
   "from": "en",
   "to": "zh"
 }
@@ -326,6 +348,7 @@ This project is open-sourced under the AGPL-3.0 license.
 ## Acknowledgements
 
 - [LinguaSpark](https://github.com/LinguaSpark/linguaspark) - Pure Rust translation inference
-- [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) - Translation models
+- [Firefox Translations Models](https://github.com/mozilla/translations) - Translation models
 - [MTranServer](https://github.com/xxnuo/MTranServer/) - Inspiration
 - [Mozilla Translation Service](https://github.com/mozilla/translation-service/) - Reference implementation
+- [Bergamot Translator](https://github.com/browsermt/bergamot-translator) - Reference implementation

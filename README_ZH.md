@@ -9,7 +9,7 @@
 
 ## 项目背景
 
-这个项目的起源是我看到了 [MTranServer](https://github.com/xxnuo/MTranServer/) 这个仓库，它使用了 [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) 进行机器翻译，并且兼容了沉浸式翻译、简约翻译等 API，但发现它目前还没开源。
+这个项目的起源是我看到了 [MTranServer](https://github.com/xxnuo/MTranServer/) 这个仓库，它使用了 [Firefox Translations Models](https://github.com/mozilla/translations) 进行机器翻译，并且兼容了沉浸式翻译、简约翻译等 API，但发现它目前还没开源。
 
 在寻找类似项目时，我发现了 Mozilla 的 [translation-service](https://github.com/mozilla/translation-service/)，虽然能用但有一年没更新了，也不兼容沉浸式翻译、简约翻译的 API。由于该项目是 C++ 编写的，而我对 C++ 不太熟悉，所以我使用 Rust 重新编写了这个项目。
 
@@ -17,7 +17,7 @@
 
 - 💪 使用 Rust 编写，性能优异，内存占用低
 - 🔄 使用纯 Rust [LinguaSpark](https://github.com/LinguaSpark/linguaspark) 推理引擎
-- 🧠 兼容 [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
+- 🧠 兼容 [Firefox Translations Models](https://github.com/mozilla/translations)
 - 🔍 内置语言检测，支持自动识别源语言
 - 🔌 支持多种翻译前端 API 格式:
   - 原生 API
@@ -32,7 +32,7 @@
 
 - **Web 框架**: [Axum](https://github.com/tokio-rs/axum)
 - **翻译引擎**: [LinguaSpark](https://github.com/LinguaSpark/linguaspark)
-- **翻译模型**: [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/)
+- **翻译模型**: [Firefox Translations Models](https://github.com/mozilla/translations)
 - **语言检测**: [Whichlang](https://github.com/quickwit-oss/whichlang)
 
 ## 部署
@@ -109,17 +109,17 @@ ENTRYPOINT ["/app/linguaspark-server"]
 
 ### 获取模型
 
-1. 从 [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) 下载预训练模型
+1. 从 [Firefox Translations Models](https://github.com/mozilla/translations) 下载预训练模型
 2. 模型放置结构应为：
 
 ```
 models/
-├── en-zh/  # 同时接受 "en-zh" 和旧版 "enzh" 形式
+├── en-zh/
 │   ├── model.enzh.intgemm.alphas.bin.gz
 │   ├── lex.50.50.enzh.s2t.bin.gz
 │   ├── srcvocab.enzh.spm.gz
 │   └── trgvocab.enzh.spm.gz
-└── zhen/  # 另一个语言对
+└── zh-en/  # 另一个语言对
     └── ...
 ```
 
@@ -127,7 +127,7 @@ models/
 
 ### 语言对支持
 
-翻译服务会自动扫描 `models` 目录下的语言对目录并加载模型。目录名必须使用 `enzh` 或 `en-zh` 形式，并采用 [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) 语言代码。
+翻译服务会自动扫描 `models` 目录下的语言对目录并加载模型。目录名使用 `源语言-目标语言` 形式，例如 `en-zh` 或 `zh-en`，并采用 [ISO 639-1](https://en.wikipedia.org/wiki/List_of_ISO_639-1_codes) 语言代码。
 
 ## 环境变量
 
@@ -162,6 +162,27 @@ POST /translate
 ```json
 {
   "text": "你好世界",
+  "from": "en",
+  "to": "zh"
+}
+```
+
+原生接口的 `text` 也可以传入数组进行批量翻译。同一批文本会按相同的源语言处理；
+省略 `from` 时，使用第一条文本检测源语言。
+
+```json
+{
+  "text": ["Hello world", "How are you?"],
+  "from": "en",
+  "to": "zh"
+}
+```
+
+响应会保持相同的数据形态：
+
+```json
+{
+  "text": ["你好世界", "你好吗？"],
   "from": "en",
   "to": "zh"
 }
@@ -324,6 +345,7 @@ GET /health
 ## 致谢
 
 - [LinguaSpark](https://github.com/LinguaSpark/linguaspark) - 提供纯 Rust 翻译推理
-- [Firefox Translations Models](https://github.com/mozilla/firefox-translations-models/) - 提供翻译模型
+- [Firefox Translations Models](https://github.com/mozilla/translations) - 提供翻译模型
 - [MTranServer](https://github.com/xxnuo/MTranServer/) - 提供灵感来源
 - [Mozilla Translation Service](https://github.com/mozilla/translation-service/) - 提供参考实现
+- [Bergamot Translator](https://github.com/browsermt/bergamot-translator) - 提供参考实现
