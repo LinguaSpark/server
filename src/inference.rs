@@ -261,7 +261,16 @@ fn parse_language_pair(name: &str) -> Result<(Language, Language), AppError> {
             }
         }
     };
-    Ok((parse_language_code(source)?, parse_language_code(target)?))
+    let parse_model_language = |code: &str| {
+        parse_language_code(code).map_err(|_| {
+            AppError::ConfigError(format!(
+                "Invalid language code '{}' in model directory '{}'; expected ISO 639-1 codes",
+                code, name
+            ))
+        })
+    };
+
+    Ok((parse_model_language(source)?, parse_model_language(target)?))
 }
 
 fn iso_code(language: &Language) -> Result<&'static str, AppError> {
