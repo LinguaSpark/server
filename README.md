@@ -211,6 +211,20 @@ Response:
 }
 ```
 
+#### Supported language pairs
+
+```
+GET /languages
+```
+
+Response body:
+```json
+{
+  "de": ["en", "fr"],
+  "en": ["de", "fr"]
+}
+```
+
 ### Compatible APIs
 
 #### Immersive Translate API

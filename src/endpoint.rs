@@ -1,5 +1,6 @@
 use crate::{
     AppError, AppState,
+    inference::iso_code,
     translation::{
         detect_language_code, normalize_language_code, perform_batch_translation,
         perform_translation,
@@ -7,7 +8,11 @@ use crate::{
 };
 use axum::{Json, extract::State};
 use serde::{Deserialize, Serialize};
-use std::{sync::Arc, time::SystemTime};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+    time::SystemTime,
+};
 
 #[derive(Debug, Deserialize)]
 pub struct DetectLanguageRequest {
@@ -54,6 +59,9 @@ pub struct TranslationResponse {
     from: String,
     to: String,
 }
+
+#[derive(Debug, Serialize)]
+pub struct LanguagesResponse(BTreeMap<String, BTreeSet<String>>);
 
 pub async fn translate(
     State(state): State<Arc<AppState>>,
@@ -264,4 +272,25 @@ pub async fn translate_deeplx(
         target_lang: to_lang.to_uppercase(),
         method: "Free".to_owned(),
     }))
+}
+
+pub async fn languages(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<LanguagesResponse>, AppError> {
+    let language_pairs = state.inference.language_pairs();
+
+    let languages = language_pairs
+        .iter()
+        .map(|(from, to_set)| {
+            (
+                iso_code(from).unwrap().to_string(),
+                to_set
+                    .iter()
+                    .map(|l| iso_code(l).unwrap().to_string())
+                    .collect::<BTreeSet<_>>(),
+            )
+        })
+        .collect();
+
+    Ok(Json(LanguagesResponse(languages)))
 }
