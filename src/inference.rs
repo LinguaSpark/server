@@ -1,4 +1,7 @@
-use crate::{AppError, translation::parse_language_code};
+use crate::{
+    AppError,
+    translation::{language_code, parse_language_code},
+};
 use flate2::read::GzDecoder;
 use isolang::Language;
 use linguaspark::{DecodeOptions, Executor, Model, ModelAssets, VocabularyAssets};
@@ -116,8 +119,8 @@ impl InferenceEngine {
             let path = entry.path();
             let directory_name = entry.file_name().to_string_lossy().into_owned();
             let (source, target) = parse_language_pair(&directory_name)?;
-            let source_code = iso_code(&source)?;
-            let target_code = iso_code(&target)?;
+            let source_code = language_code(&source);
+            let target_code = language_code(&target);
             let key = (source, target);
             if models.contains_key(&key) {
                 return Err(AppError::ConfigError(format!(
@@ -271,8 +274,8 @@ fn translate_model_batch(
 fn unsupported_pair(from: Language, to: Language) -> AppError {
     AppError::TranslationError(format!(
         "Translation from '{}' to '{}' is not supported",
-        display_code(&from),
-        display_code(&to)
+        language_code(&from),
+        language_code(&to)
     ))
 }
 
@@ -301,26 +304,6 @@ fn parse_language_pair(name: &str) -> Result<(Language, Language), AppError> {
     };
 
     Ok((parse_model_language(source)?, parse_model_language(target)?))
-}
-
-pub fn iso_code(language: &Language) -> Result<&'static str, AppError> {
-    if language.to_639_3() == "cmn" {
-        return Ok("zh");
-    }
-    language.to_639_1().ok_or_else(|| {
-        AppError::ConfigError(format!(
-            "Language '{}' does not have an ISO 639-1 code",
-            language
-        ))
-    })
-}
-
-fn display_code(language: &Language) -> &'static str {
-    if language.to_639_3() == "cmn" {
-        "zh"
-    } else {
-        language.to_639_1().unwrap_or_else(|| language.to_639_3())
-    }
 }
 
 fn discover_model_assets(model_dir: &Path) -> Result<ModelAssets, AppError> {

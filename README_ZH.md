@@ -208,6 +208,20 @@ POST /detect
 }
 ```
 
+#### 支持的语言对
+
+```
+GET /languages
+```
+
+响应：
+```json
+{
+  "de": ["en", "fr"],
+  "en": ["de", "fr"]
+}
+```
+
 ### 兼容 API
 
 #### 沉浸式翻译 API

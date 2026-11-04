@@ -57,14 +57,15 @@ enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match self {
-            AppError::TranslationError(msg) => (StatusCode::BAD_REQUEST, msg),
-            AppError::IoError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
-            AppError::Unauthorized => (
+            Self::TranslationError(msg) => (StatusCode::BAD_REQUEST, msg),
+            Self::IoError(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+            Self::Unauthorized => (
                 StatusCode::UNAUTHORIZED,
                 "Invalid or missing API key".to_string(),
             ),
-            AppError::InferenceError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
-            AppError::ConfigError(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg),
+            Self::InferenceError(msg) | Self::ConfigError(msg) => {
+                (StatusCode::INTERNAL_SERVER_ERROR, msg)
+            }
         };
 
         (status, Json(serde_json::json!({ "error": message }))).into_response()
@@ -81,18 +82,18 @@ fn resolve_num_workers(
     value: Option<&str>,
     available_parallelism: Option<usize>,
 ) -> Result<usize, AppError> {
-    match value.filter(|value| !value.is_empty()) {
-        Some(value) => value
-            .parse::<usize>()
-            .ok()
-            .filter(|&workers| workers > 0)
-            .ok_or_else(|| {
-                AppError::ConfigError(format!(
-                    "NUM_WORKERS must be a positive integer, got '{value}'"
-                ))
-            }),
-        None => Ok(available_parallelism.unwrap_or(1)),
-    }
+    let Some(value) = value.filter(|value| !value.is_empty()) else {
+        return Ok(available_parallelism.unwrap_or(1));
+    };
+    value
+        .parse::<usize>()
+        .ok()
+        .filter(|&workers| workers > 0)
+        .ok_or_else(|| {
+            AppError::ConfigError(format!(
+                "NUM_WORKERS must be a positive integer, got '{value}'"
+            ))
+        })
 }
 
 async fn auth_middleware(
@@ -110,7 +111,7 @@ async fn auth_middleware(
         let query_key = request.uri().query().and_then(|query| {
             query.split('&').find_map(|pair| {
                 let mut parts = pair.split('=');
-                if let Some("token") = parts.next() {
+                if parts.next() == Some("token") {
                     parts.next()
                 } else {
                     None

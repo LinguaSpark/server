@@ -1,42 +1,56 @@
 use crate::{AppError, AppState};
 use isolang::Language;
 use std::sync::Arc;
+use whichlang::Lang;
 
 pub fn parse_language_code(code: &str) -> Result<Language, AppError> {
     let normalized = code.split('-').next().unwrap_or(code).to_ascii_lowercase();
-    Language::from_639_1(&normalized).ok_or_else(|| {
-        AppError::TranslationError(format!(
-            "Invalid language code: '{}'. Please use ISO 639-1 format.",
-            code
-        ))
-    })
+    Language::from_639_1(&normalized)
+        .ok_or_else(|| {
+            AppError::TranslationError(format!(
+                "Invalid language code: '{}'. Please use ISO 639-1 format.",
+                code
+            ))
+        })
 }
 
-fn get_iso_code(lang: &Language) -> Result<&'static str, AppError> {
-    if lang.to_639_3() == "cmn" {
-        // whichlang uses "cmn" for Chinese, but we want to return "zh" for ISO 639-1
-        return Ok("zh");
-    }
-    lang.to_639_1().ok_or_else(|| {
-        AppError::TranslationError(format!(
-            "Language '{}' doesn't have an ISO 639-1 code",
-            lang
-        ))
-    })
+pub fn language_code(language: &Language) -> &'static str {
+    language.to_639_1().expect("language has no ISO 639-1 code")
 }
 
 pub fn detect_language_code(text: &str) -> Result<&'static str, AppError> {
-    get_iso_code(&detect_language(text)?)
+    Ok(language_code(&detect_language(text)?))
 }
 
 pub fn normalize_language_code(code: &str) -> Result<&'static str, AppError> {
-    get_iso_code(&parse_language_code(code)?)
+    Ok(language_code(&parse_language_code(code)?))
 }
 
+fn from_whichlang(language: Lang) -> Language {
+    match language {
+        Lang::Ara => Language::Ara,
+        // whichlang uses "cmn" for Chinese, but only Zho has the ISO 639-1 code "zh"
+        Lang::Cmn => Language::Zho,
+        Lang::Deu => Language::Deu,
+        Lang::Eng => Language::Eng,
+        Lang::Fra => Language::Fra,
+        Lang::Hin => Language::Hin,
+        Lang::Ita => Language::Ita,
+        Lang::Jpn => Language::Jpn,
+        Lang::Kor => Language::Kor,
+        Lang::Nld => Language::Nld,
+        Lang::Por => Language::Por,
+        Lang::Rus => Language::Rus,
+        Lang::Spa => Language::Spa,
+        Lang::Swe => Language::Swe,
+        Lang::Tur => Language::Tur,
+        Lang::Vie => Language::Vie,
+    }
+}
+
+#[expect(clippy::unnecessary_wraps, reason = "detector may become fallible")]
 fn detect_language(text: &str) -> Result<Language, AppError> {
-    Language::from_639_3(whichlang::detect_language(text).three_letter_code()).ok_or_else(|| {
-        AppError::TranslationError(format!("Failed to identify language for text: '{}'", text))
-    })
+    Ok(from_whichlang(whichlang::detect_language(text)))
 }
 
 fn resolve_source_language(
@@ -45,16 +59,14 @@ fn resolve_source_language(
     from_lang: Option<&str>,
     target_lang: Language,
 ) -> Result<Language, AppError> {
-    match from_lang {
-        None | Some("") => match state.sole_language_pair {
-            Some((source, target)) if target == target_lang => Ok(source),
-            _ => detect_language(text),
-        },
-        Some(code) if code.eq_ignore_ascii_case("auto") => match state.sole_language_pair {
-            Some((source, target)) if target == target_lang => Ok(source),
-            _ => detect_language(text),
-        },
+    let explicit = from_lang.filter(|code| !code.is_empty() && !code.eq_ignore_ascii_case("auto"));
+
+    match explicit {
         Some(code) => parse_language_code(code),
+        None => match state.sole_language_pair {
+            Some((source, target)) if target == target_lang => Ok(source),
+            _ => detect_language(text),
+        },
     }
 }
 
@@ -68,11 +80,11 @@ pub async fn perform_translation(
 
     let source_lang = resolve_source_language(state, text, from_lang.as_deref(), target_lang)?;
 
-    let from_code = get_iso_code(&source_lang)?;
-    let to_code = get_iso_code(&target_lang)?;
+    let from_code = language_code(&source_lang);
+    let to_code = language_code(&target_lang);
 
     // If source and target languages are the same, return the original text
-    if from_code == to_code {
+    if source_lang == target_lang {
         return Ok((text.to_string(), from_code.to_string(), to_code.to_string()));
     }
 
@@ -96,7 +108,7 @@ pub async fn perform_batch_translation(
 
     let target_lang = parse_language_code(to_lang)?;
     let source_lang = resolve_source_language(state, &texts[0], from_lang.as_deref(), target_lang)?;
-    let source_code = get_iso_code(&source_lang)?.to_string();
+    let source_code = language_code(&source_lang).to_string();
 
     if source_lang == target_lang {
         return Ok(texts

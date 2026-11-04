@@ -1,8 +1,7 @@
 use crate::{
     AppError, AppState,
-    inference::iso_code,
     translation::{
-        detect_language_code, normalize_language_code, perform_batch_translation,
+        detect_language_code, language_code, normalize_language_code, perform_batch_translation,
         perform_translation,
     },
 };
@@ -283,10 +282,10 @@ pub async fn languages(
         .iter()
         .map(|(from, to_set)| {
             (
-                iso_code(from).unwrap().to_string(),
+                language_code(from).to_string(),
                 to_set
                     .iter()
-                    .map(|l| iso_code(l).unwrap().to_string())
+                    .map(|l| language_code(l).to_string())
                     .collect::<BTreeSet<_>>(),
             )
         })
