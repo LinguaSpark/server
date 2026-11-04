@@ -3,7 +3,7 @@ use flate2::read::GzDecoder;
 use isolang::Language;
 use linguaspark::{DecodeOptions, Executor, Model, ModelAssets, VocabularyAssets};
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, BTreeSet, HashMap},
     fs,
     io::Read,
     path::{Path, PathBuf},
@@ -165,6 +165,36 @@ impl InferenceEngine {
         pairs.next().is_none().then_some(pair)
     }
 
+    pub fn language_pairs(&self) -> BTreeMap<&Language, BTreeSet<&Language>> {
+        let mut language_pairs = BTreeMap::new();
+        for (from, to) in self.models.keys() {
+            language_pairs
+                .entry(from)
+                .and_modify(|v: &mut BTreeSet<&Language>| {
+                    v.insert(to);
+                })
+                .or_insert_with(|| {
+                    let mut set = BTreeSet::new();
+                    set.insert(to);
+                    set
+                });
+        }
+
+        // transitive from_lang -> "en" -> to_lang
+        let from_eng_languages = self
+            .models
+            .keys()
+            .filter(|(from, _)| *from == Language::Eng)
+            .map(|(_, to)| to);
+        for (from, to_set) in language_pairs.iter_mut() {
+            if to_set.contains(&Language::Eng) {
+                to_set.extend(from_eng_languages.clone().filter(|l| l != from));
+            }
+        }
+
+        language_pairs
+    }
+
     pub async fn translate(
         &self,
         from: Language,
@@ -273,7 +303,7 @@ fn parse_language_pair(name: &str) -> Result<(Language, Language), AppError> {
     Ok((parse_model_language(source)?, parse_model_language(target)?))
 }
 
-fn iso_code(language: &Language) -> Result<&'static str, AppError> {
+pub fn iso_code(language: &Language) -> Result<&'static str, AppError> {
     if language.to_639_3() == "cmn" {
         return Ok("zh");
     }

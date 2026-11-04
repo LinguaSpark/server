@@ -236,6 +236,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/hcfy", post(endpoint::translate_hcfy))
         .route("/deeplx", post(endpoint::translate_deeplx))
         .route("/detect", post(endpoint::detect_language))
+        .route("/languages", get(endpoint::languages))
         .route_layer(middleware::from_fn_with_state(
             Arc::clone(&app_state),
             auth_middleware,
